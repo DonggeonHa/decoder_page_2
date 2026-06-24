@@ -22,13 +22,8 @@ var progressBar = document.getElementById("progressBar");
 var fileName = document.getElementById("fileName");
 var streamState = document.getElementById("streamState");
 var chunkStatus = document.getElementById("chunkStatus");
-var copyMissingBtn = document.getElementById("copyMissingBtn");
+var resendRanges = document.getElementById("resendRanges");
 var downloadBtn = document.getElementById("downloadBtn");
-var manualInput = document.getElementById("manualInput");
-var manualMeter = document.getElementById("manualMeter");
-var addManualBtn = document.getElementById("addManualBtn");
-var pasteBtn = document.getElementById("pasteBtn");
-var clearManualBtn = document.getElementById("clearManualBtn");
 
 var collector = createFileCollector();
 var completeBytes = null;
@@ -139,7 +134,7 @@ function renderProgress() {
         "빠진 조각: " + missing.length + "개 (" + missingRanges + ")"
       ].join("\n")
     : "수신된 조각 없음";
-  copyMissingBtn.disabled = !collector.fileId || missing.length === 0;
+  resendRanges.textContent = collector.fileId && missing.length ? missingRanges : "-";
 }
 
 function resetAll() {
@@ -151,8 +146,6 @@ function resetAll() {
   collector = createFileCollector();
   completeBytes = null;
   downloadBtn.disabled = true;
-  manualInput.value = "";
-  updateManualMeter();
   renderProgress();
   setStatus("초기화됨");
 }
@@ -195,36 +188,6 @@ function triggerDownload() {
   }
 }
 
-function updateManualMeter() {
-  manualMeter.textContent = manualInput.value.length + " chars";
-}
-
-async function pasteManualInput() {
-  try {
-    manualInput.value = await navigator.clipboard.readText();
-    updateManualMeter();
-    setStatus("붙여넣기 완료", "ok");
-  } catch (error) {
-    setStatus("브라우저가 클립보드 읽기를 차단했습니다.", "error");
-  }
-}
-
-async function copyMissingRanges() {
-  var missing = getMissingIndexes(collector);
-  if (!missing.length) {
-    setStatus("복사할 누락 조각이 없습니다.", "error");
-    return;
-  }
-
-  var text = formatIndexRanges(missing);
-  try {
-    await navigator.clipboard.writeText(text);
-    setStatus("누락 조각 복사됨: " + text, "ok");
-  } catch (error) {
-    setStatus("브라우저가 클립보드 쓰기를 차단했습니다: " + text, "error");
-  }
-}
-
 startScanBtn.onclick = startScanner;
 stopScanBtn.onclick = function () {
   scanner.stop();
@@ -232,17 +195,6 @@ stopScanBtn.onclick = function () {
 };
 resetBtn.onclick = resetAll;
 downloadBtn.onclick = triggerDownload;
-copyMissingBtn.onclick = copyMissingRanges;
-addManualBtn.onclick = function () {
-  addPayload(manualInput.value);
-};
-pasteBtn.onclick = pasteManualInput;
-clearManualBtn.onclick = function () {
-  manualInput.value = "";
-  updateManualMeter();
-};
-manualInput.oninput = updateManualMeter;
 
 detectEnvironment();
 renderProgress();
-updateManualMeter();

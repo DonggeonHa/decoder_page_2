@@ -34,7 +34,7 @@ npm run jsp:dev
 
 - Android Chrome 권장
 - 카메라 스캔은 HTTPS 또는 Chrome 로컬 테스트 환경 권장
-- `BarcodeDetector`가 없는 브라우저에서는 수동 입력으로 payload를 붙여넣어 테스트할 수 있습니다.
+- 디코더에서 누락 조각이 표시되면 폰 화면의 재전송 입력값을 보고 폐쇄망 PC의 JSP에 직접 입력합니다.
 
 ## 폐쇄망 JSP
 

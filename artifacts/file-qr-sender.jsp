@@ -344,7 +344,7 @@
 			</div>
 			<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">누락 조각 범위</label>
 			<input type="text" name="missingRanges" value="<%= escapeHtml(missingRanges) %>" placeholder="444, 501-508">
-			<div class="hint">디코더의 누락 목록 복사 값을 그대로 붙여넣고 전송 모드를 누락 조각만 재전송으로 선택하세요.</div>
+			<div class="hint">폰 화면에 표시된 값을 보고 직접 입력한 뒤 전송 모드를 누락 조각만 재전송으로 선택하세요.</div>
 			<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">재생 간격</label>
 			<select name="frameDelayMs">
 				<option value="250" <%= frameDelayMs == 250 ? "selected" : "" %>>250ms - 권장</option>

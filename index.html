@@ -57,24 +57,13 @@
 
       <pre id="chunkStatus" class="chunk-status">수신된 조각 없음</pre>
 
-      <div class="actions">
-        <button id="copyMissingBtn" type="button" disabled>누락 목록 복사</button>
+      <div class="resend-box">
+        <div class="resend-label">JSP 재전송 입력값</div>
+        <div id="resendRanges" class="resend-ranges">-</div>
+        <p>폰 화면의 이 값을 보고 폐쇄망 PC의 누락 조각 범위 칸에 직접 입력하세요.</p>
       </div>
 
       <button id="downloadBtn" class="download" type="button" disabled>파일 다운로드</button>
-    </section>
-
-    <section class="panel manual-panel">
-      <div class="section-title">
-        <h2>수동 입력</h2>
-        <span id="manualMeter" class="meter">0 chars</span>
-      </div>
-      <textarea id="manualInput" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="FILE: payload"></textarea>
-      <div class="actions">
-        <button id="addManualBtn" class="primary" type="button">조각 추가</button>
-        <button id="pasteBtn" type="button">붙여넣기</button>
-        <button id="clearManualBtn" type="button">입력 지우기</button>
-      </div>
     </section>
   </main>
 

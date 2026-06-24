@@ -31,12 +31,14 @@ test("JSP sender is FILE:V2 Base45 and reads the typed file path directly", () =
   assert.match(jsp, /name="densityMode"/);
   assert.match(jsp, /name="frameDelayMs"/);
   assert.match(jsp, /qrFrameLabels/);
+  assert.match(jsp, /폰 화면에 표시된 값을 보고 직접 입력/);
   assert.match(jsp, /ErrorCorrectionLevel\.L/);
 
   assert.doesNotMatch(jsp, /FILE legacy|USE_FILE_V1_FORMAT|name="format"|request\.getParameter\("format"\)/);
   assert.doesNotMatch(jsp, /MAX_FILE_BYTES|MAX_QR_COUNT|validateFileSize/);
   assert.doesNotMatch(jsp, /resolveAllowedFile|FILE_QR_BASE_DIR|fileQr\.baseDir|allowedBaseDir/);
   assert.doesNotMatch(jsp, /qrPayloadTexts|payload 확인|payload-text|<textarea|<details/);
+  assert.doesNotMatch(jsp, /붙여넣/);
 });
 
 test("JSP FILE:V2 payload shape is accepted by the decoder protocol", () => {

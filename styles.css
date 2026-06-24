@@ -236,21 +236,40 @@ dd {
   white-space: pre-wrap;
 }
 
+.resend-box {
+  margin-top: 12px;
+  padding: 12px;
+  border: 2px solid var(--primary);
+  border-radius: 6px;
+  background: #f8fbff;
+}
+
+.resend-label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.resend-ranges {
+  margin-top: 8px;
+  color: var(--ink);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.resend-box p {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 .download {
   width: 100%;
   margin-top: 12px;
-}
-
-textarea {
-  width: 100%;
-  min-height: 140px;
-  padding: 10px;
-  border: 1px solid #9aa3af;
-  border-radius: 5px;
-  font-family: Consolas, "Courier New", monospace;
-  font-size: 15px;
-  line-height: 1.4;
-  resize: vertical;
 }
 
 .hidden {
