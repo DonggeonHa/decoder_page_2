@@ -25,9 +25,12 @@ test("static decoder page is self-contained and wired to local modules", () => {
   assert.doesNotMatch(html, /https?:\/\//, "page should not depend on remote CDN assets");
   assert.match(html, /id="video"/, "page should expose camera preview");
   assert.match(html, /id="manualInput"/, "page should expose manual payload input");
+  assert.match(html, /id="copyMissingBtn"/, "page should expose missing range copy action");
   assert.match(html, /id="downloadBtn"/, "page should expose download action");
   assert.match(html, /type="module" src="\.\/app\.js"/, "page should load local app module");
   assert.match(app, /from "\.\/protocol\.js"/, "app should use tested protocol helpers");
+  assert.match(app, /formatIndexRanges/, "app should compact missing chunk ranges");
+  assert.match(app, /copyMissingRanges/, "app should let users copy resend ranges");
   assert.match(app, /from "\.\/scanner\.js"/, "app should use scanner wrapper");
   assert.match(scanner, /BarcodeDetector/, "scanner should use browser BarcodeDetector");
   assert.equal(packageJson.scripts.dev, "node server.mjs", "dev server should not need package downloads");

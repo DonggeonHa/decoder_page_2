@@ -265,6 +265,43 @@ export function getMissingIndexes(collector) {
   return indexes;
 }
 
+export function formatIndexRanges(indexes) {
+  var values = [];
+  var seen = Object.create(null);
+
+  for (var i = 0; i < indexes.length; i += 1) {
+    var value = Number(indexes[i]);
+    if (Number.isInteger(value) && value > 0 && !seen[value]) {
+      seen[value] = true;
+      values.push(value);
+    }
+  }
+
+  if (!values.length) return "-";
+
+  values.sort(function (left, right) {
+    return left - right;
+  });
+
+  var ranges = [];
+  var start = values[0];
+  var previous = values[0];
+
+  for (var j = 1; j <= values.length; j += 1) {
+    var current = values[j];
+    if (current === previous + 1) {
+      previous = current;
+      continue;
+    }
+
+    ranges.push(start === previous ? String(start) : start + "-" + previous);
+    start = current;
+    previous = current;
+  }
+
+  return ranges.join(", ");
+}
+
 export function assembleFileBase64(collector) {
   if (!isFileCollectorComplete(collector)) {
     throw new Error("Cannot assemble incomplete FILE stream.");

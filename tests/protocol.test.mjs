@@ -6,6 +6,7 @@ import {
   assembleFileBase64,
   base64ToBytes,
   createFileCollector,
+  formatIndexRanges,
   getMissingIndexes,
   parseQrPayload,
   textToBase64Url
@@ -162,4 +163,10 @@ test("rejects invalid assembled base64 before download", () => {
   assert.throws(() => base64ToBytes("QUJD=REV"), /Invalid base64/);
   assert.throws(() => base64ToBytes("abc"), /Invalid base64/);
   assert.throws(() => base64ToBytes("not@@@"), /Invalid base64/);
+});
+
+test("formats missing indexes as compact resend ranges", () => {
+  assert.equal(formatIndexRanges([]), "-");
+  assert.equal(formatIndexRanges([1, 2, 3, 7, 10, 11, 12]), "1-3, 7, 10-12");
+  assert.equal(formatIndexRanges([9, 4, 5, 5, 6, 2]), "2, 4-6, 9");
 });

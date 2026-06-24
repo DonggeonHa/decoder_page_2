@@ -2,6 +2,7 @@ import {
   addFileChunk,
   assembleFileBytes,
   createFileCollector,
+  formatIndexRanges,
   getMissingIndexes,
   getReceivedIndexes,
   parseQrPayload
@@ -21,6 +22,7 @@ var progressBar = document.getElementById("progressBar");
 var fileName = document.getElementById("fileName");
 var streamState = document.getElementById("streamState");
 var chunkStatus = document.getElementById("chunkStatus");
+var copyMissingBtn = document.getElementById("copyMissingBtn");
 var downloadBtn = document.getElementById("downloadBtn");
 var manualInput = document.getElementById("manualInput");
 var manualMeter = document.getElementById("manualMeter");
@@ -124,6 +126,8 @@ function renderProgress() {
   var missing = getMissingIndexes(collector);
   var total = collector.total || 0;
   var percent = total ? Math.round((received.length / total) * 100) : 0;
+  var receivedRanges = formatIndexRanges(received);
+  var missingRanges = formatIndexRanges(missing);
 
   fileName.textContent = collector.fileName || "-";
   progressText.textContent = received.length + " / " + total;
@@ -131,10 +135,11 @@ function renderProgress() {
   streamState.textContent = completeBytes ? "완료" : collector.fileId ? "수신 중" : "대기";
   chunkStatus.textContent = collector.fileId
     ? [
-        "받은 조각: " + (received.length ? received.join(", ") : "-"),
-        "빠진 조각: " + (missing.length ? missing.join(", ") : "-")
+        "받은 조각: " + received.length + "개 (" + receivedRanges + ")",
+        "빠진 조각: " + missing.length + "개 (" + missingRanges + ")"
       ].join("\n")
     : "수신된 조각 없음";
+  copyMissingBtn.disabled = !collector.fileId || missing.length === 0;
 }
 
 function resetAll() {
@@ -204,6 +209,22 @@ async function pasteManualInput() {
   }
 }
 
+async function copyMissingRanges() {
+  var missing = getMissingIndexes(collector);
+  if (!missing.length) {
+    setStatus("복사할 누락 조각이 없습니다.", "error");
+    return;
+  }
+
+  var text = formatIndexRanges(missing);
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus("누락 조각 복사됨: " + text, "ok");
+  } catch (error) {
+    setStatus("브라우저가 클립보드 쓰기를 차단했습니다: " + text, "error");
+  }
+}
+
 startScanBtn.onclick = startScanner;
 stopScanBtn.onclick = function () {
   scanner.stop();
@@ -211,6 +232,7 @@ stopScanBtn.onclick = function () {
 };
 resetBtn.onclick = resetAll;
 downloadBtn.onclick = triggerDownload;
+copyMissingBtn.onclick = copyMissingRanges;
 addManualBtn.onclick = function () {
   addPayload(manualInput.value);
 };

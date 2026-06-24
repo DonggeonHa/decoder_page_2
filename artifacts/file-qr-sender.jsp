@@ -39,6 +39,8 @@
 <%!
 	static final int QR_IMAGE_SIZE = 640;
 	static final int MAX_QR_TEXT_CHARS = 4296;
+	static final int BALANCED_QR_TEXT_CHARS = 3800;
+	static final int STABLE_QR_TEXT_CHARS = 3400;
 	static final String BASE45_CHARSET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
 
 	public static String escapeHtml(String input) {
@@ -100,7 +102,92 @@
 		return "FILE:V2:" + encodedName.length() + ":" + encodedName + ":" + index + ":" + total + ":" + base45Encode(chunk);
 	}
 
-	public static int calculateFileChunkBytes(String safeFileName, int byteLength) {
+	public static String normalizeDensityMode(String value) {
+		if ("balanced".equals(value) || "stable".equals(value)) return value;
+		return "max";
+	}
+
+	public static int maxQrTextCharsForMode(String densityMode) {
+		if ("stable".equals(densityMode)) return STABLE_QR_TEXT_CHARS;
+		if ("balanced".equals(densityMode)) return BALANCED_QR_TEXT_CHARS;
+		return MAX_QR_TEXT_CHARS;
+	}
+
+	public static int normalizeFrameDelayMs(String value) {
+		try {
+			int delay = Integer.parseInt(value == null ? "" : value.trim());
+			if (delay == 0 || delay == 150 || delay == 250 || delay == 400) return delay;
+		} catch (Exception ignored) {
+		}
+		return 250;
+	}
+
+	public static String frameDelayLabel(int frameDelayMs) {
+		return frameDelayMs == 0 ? "수동" : frameDelayMs + "ms";
+	}
+
+	public static List<Integer> buildAllIndexes(int totalChunks) {
+		List<Integer> indexes = new ArrayList<Integer>();
+		for (int i = 1; i <= totalChunks; i += 1) {
+			indexes.add(Integer.valueOf(i));
+		}
+		return indexes;
+	}
+
+	public static List<Integer> parseRequestedIndexes(String value, int totalChunks) {
+		if (value == null || value.trim().length() == 0) {
+			throw new IllegalArgumentException("누락 조각 번호를 입력하세요. 예: 444, 501-508");
+		}
+
+		boolean[] selected = new boolean[totalChunks + 1];
+		String normalized = value.replace('，', ',');
+		String[] tokens = normalized.split("[,\\s]+");
+
+		for (int i = 0; i < tokens.length; i += 1) {
+			String token = tokens[i].trim();
+			if (token.length() == 0) continue;
+
+			int dash = token.indexOf('-');
+			int start;
+			int end;
+
+			try {
+				if (dash >= 0) {
+					if (dash != token.lastIndexOf('-')) {
+						throw new NumberFormatException("invalid range");
+					}
+					start = Integer.parseInt(token.substring(0, dash).trim());
+					end = Integer.parseInt(token.substring(dash + 1).trim());
+				} else {
+					start = Integer.parseInt(token);
+					end = start;
+				}
+			} catch (Exception e) {
+				throw new IllegalArgumentException("누락 조각 형식이 올바르지 않습니다: " + token);
+			}
+
+			if (start < 1 || end < 1 || start > end || end > totalChunks) {
+				throw new IllegalArgumentException("누락 조각 범위가 전체 프레임 범위를 벗어났습니다: " + token);
+			}
+
+			for (int index = start; index <= end; index += 1) {
+				selected[index] = true;
+			}
+		}
+
+		List<Integer> indexes = new ArrayList<Integer>();
+		for (int index = 1; index <= totalChunks; index += 1) {
+			if (selected[index]) indexes.add(Integer.valueOf(index));
+		}
+
+		if (indexes.isEmpty()) {
+			throw new IllegalArgumentException("생성할 누락 조각 번호가 없습니다.");
+		}
+
+		return indexes;
+	}
+
+	public static int calculateFileChunkBytes(String safeFileName, int byteLength, int maxQrTextChars) {
 		String encodedName = textBase45(safeFileName);
 		int encodedNameLength = encodedName.length();
 		int totalChunks = 1;
@@ -114,7 +201,7 @@
 					+ 1 + digits
 					+ 1 + digits
 					+ 1;
-			int chunkChars = MAX_QR_TEXT_CHARS - overhead;
+			int chunkChars = maxQrTextChars - overhead;
 			int chunkBytes = base45CharsToMaxBytes(chunkChars);
 			if (chunkBytes < 1) {
 				throw new IllegalArgumentException("파일명이 너무 길어 QR payload를 만들 수 없습니다.");
@@ -157,12 +244,19 @@
 
 <%
 	String filePath = request.getParameter("filePath");
+	String sendMode = "missing".equals(request.getParameter("sendMode")) ? "missing" : "all";
+	String missingRanges = request.getParameter("missingRanges");
+	String densityMode = normalizeDensityMode(request.getParameter("densityMode"));
+	int maxQrTextChars = maxQrTextCharsForMode(densityMode);
+	int frameDelayMs = normalizeFrameDelayMs(request.getParameter("frameDelayMs"));
 	String errorMessage = "";
 	String fileName = "";
 	long fileSizeBytes = 0;
 	int usedChunkBytes = 0;
+	int totalChunks = 0;
 
 	List<String> qrBase64Images = new ArrayList<String>();
+	List<String> qrFrameLabels = new ArrayList<String>();
 
 	if (filePath != null && !filePath.trim().isEmpty()) {
 		try {
@@ -176,23 +270,29 @@
 
 			byte[] fileBytes = Files.readAllBytes(targetFile.toPath());
 
-			usedChunkBytes = calculateFileChunkBytes(fileName, fileBytes.length);
-			int totalChunks = (fileBytes.length + usedChunkBytes - 1) / usedChunkBytes;
+			usedChunkBytes = calculateFileChunkBytes(fileName, fileBytes.length, maxQrTextChars);
+			totalChunks = (fileBytes.length + usedChunkBytes - 1) / usedChunkBytes;
+			List<Integer> requestedIndexes = "missing".equals(sendMode)
+					? parseRequestedIndexes(missingRanges, totalChunks)
+					: buildAllIndexes(totalChunks);
 
-			for (int i = 0; i < totalChunks; i++) {
-				int start = i * usedChunkBytes;
+			for (int i = 0; i < requestedIndexes.size(); i++) {
+				int chunkIndex = requestedIndexes.get(i).intValue();
+				int start = (chunkIndex - 1) * usedChunkBytes;
 				int end = Math.min(start + usedChunkBytes, fileBytes.length);
 				byte[] chunk = sliceBytes(fileBytes, start, end);
 
-				String qrText = buildFileV2Payload(fileName, i + 1, totalChunks, chunk);
-				if (qrText.length() > MAX_QR_TEXT_CHARS) {
+				String qrText = buildFileV2Payload(fileName, chunkIndex, totalChunks, chunk);
+				if (qrText.length() > maxQrTextChars) {
 					throw new Exception("QR payload가 너무 큽니다: " + qrText.length() + " chars");
 				}
 				qrBase64Images.add(generateQRCodeBase64(qrText, QR_IMAGE_SIZE));
+				qrFrameLabels.add(String.valueOf(chunkIndex));
 			}
 		} catch (Exception e) {
 			errorMessage = escapeHtml(e.getMessage());
 			qrBase64Images.clear();
+			qrFrameLabels.clear();
 		}
 	}
 %>
@@ -205,7 +305,9 @@
 	<style>
 		body { font-family: sans-serif; padding: 20px; background-color: #f4f4f4; margin: 0; text-align: center;}
 		.container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); border-radius: 8px;}
-		input[type="text"] { width: 100%; padding: 10px; box-sizing: border-box; margin-bottom: 10px; font-family: monospace; }
+		input[type="text"], select { width: 100%; padding: 10px; box-sizing: border-box; margin-bottom: 10px; font-family: monospace; }
+		.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+		.hint { color: #555; font-size: 13px; margin: -4px 0 10px; text-align: left; }
 		button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #0056b3; color: white; border: none; border-radius: 4px;}
 		.error-msg { color: red; font-weight: bold; margin-top: 10px; }
 		.player-area { text-align: center; margin-top: 30px; border: 2px solid #333; padding: 20px; background-color: #fff;}
@@ -214,6 +316,7 @@
 		.controls button { background-color: #333; margin: 0 5px; }
 		.status { font-size: 20px; font-weight: bold; margin-top: 10px; }
 		.file-info { background: #e9ecef; padding: 10px; margin-top: 20px; text-align: left; }
+		@media (max-width: 700px) { .form-row { grid-template-columns: 1fr; } }
 	</style>
 </head>
 <body>
@@ -222,6 +325,33 @@
 		<form method="post" action="">
 			<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">서버 내 파일 절대 경로 입력</label>
 			<input type="text" name="filePath" value="<%= escapeHtml(filePath) %>" placeholder="C:\temp\sample.pptx">
+			<div class="form-row">
+				<div>
+					<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">전송 모드</label>
+					<select name="sendMode">
+						<option value="all" <%= "all".equals(sendMode) ? "selected" : "" %>>전체 전송</option>
+						<option value="missing" <%= "missing".equals(sendMode) ? "selected" : "" %>>누락 조각만 재전송</option>
+					</select>
+				</div>
+				<div>
+					<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">QR 밀도</label>
+					<select name="densityMode">
+						<option value="max" <%= "max".equals(densityMode) ? "selected" : "" %>>최대 - 프레임 최소</option>
+						<option value="balanced" <%= "balanced".equals(densityMode) ? "selected" : "" %>>균형 - 인식 안정</option>
+						<option value="stable" <%= "stable".equals(densityMode) ? "selected" : "" %>>안정 - 더 낮은 밀도</option>
+					</select>
+				</div>
+			</div>
+			<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">누락 조각 범위</label>
+			<input type="text" name="missingRanges" value="<%= escapeHtml(missingRanges) %>" placeholder="444, 501-508">
+			<div class="hint">디코더의 누락 목록 복사 값을 그대로 붙여넣고 전송 모드를 누락 조각만 재전송으로 선택하세요.</div>
+			<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">재생 간격</label>
+			<select name="frameDelayMs">
+				<option value="250" <%= frameDelayMs == 250 ? "selected" : "" %>>250ms - 권장</option>
+				<option value="400" <%= frameDelayMs == 400 ? "selected" : "" %>>400ms - 안정</option>
+				<option value="150" <%= frameDelayMs == 150 ? "selected" : "" %>>150ms - 빠름</option>
+				<option value="0" <%= frameDelayMs == 0 ? "selected" : "" %>>수동 넘김</option>
+			</select>
 			<button type="submit">QR 스트림 생성</button>
 		</form>
 
@@ -234,10 +364,14 @@
 				<strong>파일명:</strong> <%= escapeHtml(fileName) %><br>
 				<strong>파일 크기:</strong> <%= fileSizeBytes %> bytes<br>
 				<strong>payload 형식:</strong> FILE:V2 / Base45<br>
-				<strong>총 생성 프레임:</strong> <%= qrBase64Images.size() %>장<br>
+				<strong>전체 FILE 프레임:</strong> <%= totalChunks %>장<br>
+				<strong>이번 생성 프레임:</strong> <%= qrBase64Images.size() %>장<br>
+				<strong>전송 모드:</strong> <%= "missing".equals(sendMode) ? "누락 조각만 재전송" : "전체 전송" %><br>
+				<strong>밀도:</strong> <%= escapeHtml(densityMode) %><br>
+				<strong>재생 간격:</strong> <%= frameDelayLabel(frameDelayMs) %><br>
 				<strong>QR 이미지:</strong> <%= QR_IMAGE_SIZE %>px /
 				<strong>chunk:</strong> <%= usedChunkBytes %> bytes /
-				<strong>QR 최대 payload:</strong> <%= MAX_QR_TEXT_CHARS %> chars
+				<strong>QR 최대 payload:</strong> <%= maxQrTextChars %> chars
 			</div>
 
 			<div class="player-area">
@@ -247,6 +381,8 @@
 				<div class="controls">
 					<button onclick="startPlay()" type="button">▶ 재생</button>
 					<button onclick="stopPlay()" type="button">⏸ 일시정지</button>
+					<button onclick="prevFrame()" type="button">이전</button>
+					<button onclick="nextFrame()" type="button">다음</button>
 					<button onclick="resetPlay()" type="button">⏹ 처음으로</button>
 				</div>
 			</div>
@@ -257,9 +393,16 @@
 						"data:image/png;base64,<%=qrBase64Images.get(i)%>"<%= i < qrBase64Images.size() - 1 ? "," : "" %>
 					<% } %>
 				];
+				var qrFrameLabels = [
+					<% for(int i = 0; i < qrFrameLabels.size(); i++) { %>
+						"<%=qrFrameLabels.get(i)%>"<%= i < qrFrameLabels.size() - 1 ? "," : "" %>
+					<% } %>
+				];
 
 				var currentIndex = 0;
 				var playInterval = null;
+				var totalFileFrames = <%= totalChunks %>;
+				var frameDelayMs = <%= frameDelayMs %>;
 				var imgElement = document.getElementById("qrImage");
 				var statusElement = document.getElementById("frameStatus");
 
@@ -269,7 +412,10 @@
 				}
 
 				function updateStatus() {
-					statusElement.innerText = (currentIndex + 1) + " / " + qrFrames.length + " 프레임";
+					var fileFrame = qrFrameLabels[currentIndex] || String(currentIndex + 1);
+					var modeText = frameDelayMs === 0 ? "수동" : frameDelayMs + "ms";
+					statusElement.innerText = "FILE " + fileFrame + " / " + totalFileFrames
+							+ " (" + (currentIndex + 1) + " / " + qrFrames.length + " 재생, " + modeText + ")";
 				}
 
 				function nextFrame() {
@@ -281,9 +427,23 @@
 					updateStatus();
 				}
 
+				function prevFrame() {
+					currentIndex--;
+					if (currentIndex < 0) {
+						currentIndex = qrFrames.length - 1;
+					}
+					imgElement.src = qrFrames[currentIndex];
+					updateStatus();
+				}
+
 				function startPlay() {
 					if (playInterval) clearInterval(playInterval);
-					playInterval = setInterval(nextFrame, 150);
+					if (frameDelayMs === 0) {
+						playInterval = null;
+						updateStatus();
+						return;
+					}
+					playInterval = setInterval(nextFrame, frameDelayMs);
 				}
 
 				function stopPlay() {
