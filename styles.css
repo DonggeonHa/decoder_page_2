@@ -1,0 +1,272 @@
+:root {
+  --bg: #f5f7fa;
+  --panel: #ffffff;
+  --text: #17181a;
+  --muted: #5f6670;
+  --border: #d4dbe5;
+  --primary: #0b57d0;
+  --primary-dark: #083f9a;
+  --green: #146c43;
+  --red: #b42318;
+  --amber-bg: #fff7db;
+  --amber-border: #efc84a;
+  --ink: #111827;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Arial, "Malgun Gothic", sans-serif;
+  font-size: 16px;
+}
+
+main {
+  width: min(940px, 100%);
+  margin: 0 auto;
+  padding: 14px;
+}
+
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 4px 2px 10px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+h2 {
+  font-size: 18px;
+}
+
+p {
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.panel {
+  margin: 12px 0;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.badge,
+.meter {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.badge {
+  min-width: 64px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  text-align: center;
+}
+
+.scanner-shell {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #101418;
+}
+
+video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+#scannerOverlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+button {
+  min-height: 42px;
+  padding: 8px 13px;
+  border: 1px solid #7b8491;
+  border-radius: 5px;
+  background: #f7f8fa;
+  color: var(--ink);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  color: #8a9099;
+  border-color: #c7cdd6;
+  background: #eceff3;
+}
+
+.primary,
+.download:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.primary:active,
+.download:not(:disabled):active {
+  background: var(--primary-dark);
+}
+
+.status {
+  min-height: 24px;
+  margin-top: 10px;
+  line-height: 1.45;
+}
+
+.ok {
+  color: var(--green);
+}
+
+.error {
+  color: var(--red);
+}
+
+.notice {
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid var(--amber-border);
+  border-radius: 5px;
+  background: var(--amber-bg);
+  color: #3e3320;
+  line-height: 1.45;
+}
+
+.file-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.file-meta div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #fafbfc;
+}
+
+dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.progress-track {
+  width: 100%;
+  height: 18px;
+  overflow: hidden;
+  border: 1px solid #b7c0cc;
+  border-radius: 999px;
+  background: #e6eaf0;
+}
+
+.progress-fill {
+  width: 0%;
+  height: 100%;
+  background: var(--green);
+  transition: width 120ms ease;
+}
+
+.chunk-status {
+  min-height: 74px;
+  margin: 12px 0 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #f9fafb;
+  color: #27313f;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.download {
+  width: 100%;
+  margin-top: 12px;
+}
+
+textarea {
+  width: 100%;
+  min-height: 140px;
+  padding: 10px;
+  border: 1px solid #9aa3af;
+  border-radius: 5px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 15px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.hidden {
+  display: none !important;
+}
+
+@media (max-width: 620px) {
+  main {
+    padding: 10px;
+  }
+
+  .file-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .actions button {
+    flex: 1 1 130px;
+  }
+}

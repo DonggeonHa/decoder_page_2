@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>FILE QR Decoder</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <div>
+        <h1>FILE QR Decoder</h1>
+        <p>폐쇄망 FILE QR 수신기</p>
+      </div>
+      <span id="capabilityBadge" class="badge">Checking</span>
+    </header>
+
+    <section class="panel scanner-panel">
+      <div id="environmentWarning" class="notice hidden"></div>
+
+      <div class="scanner-shell">
+        <video id="video" playsinline muted></video>
+        <div id="scannerOverlay">카메라 대기</div>
+      </div>
+
+      <div class="actions">
+        <button id="startScanBtn" class="primary" type="button">스캔 시작</button>
+        <button id="stopScanBtn" type="button" disabled>스캔 중지</button>
+        <button id="resetBtn" type="button">초기화</button>
+      </div>
+
+      <div id="statusLine" class="status">대기 중</div>
+    </section>
+
+    <section class="panel progress-panel">
+      <div class="section-title">
+        <h2>수신 상태</h2>
+        <span id="progressText" class="meter">0 / 0</span>
+      </div>
+
+      <dl class="file-meta">
+        <div>
+          <dt>파일명</dt>
+          <dd id="fileName">-</dd>
+        </div>
+        <div>
+          <dt>상태</dt>
+          <dd id="streamState">대기</dd>
+        </div>
+      </dl>
+
+      <div class="progress-track" aria-hidden="true">
+        <div id="progressBar" class="progress-fill"></div>
+      </div>
+
+      <pre id="chunkStatus" class="chunk-status">수신된 조각 없음</pre>
+
+      <button id="downloadBtn" class="download" type="button" disabled>파일 다운로드</button>
+    </section>
+
+    <section class="panel manual-panel">
+      <div class="section-title">
+        <h2>수동 입력</h2>
+        <span id="manualMeter" class="meter">0 chars</span>
+      </div>
+      <textarea id="manualInput" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="FILE: payload"></textarea>
+      <div class="actions">
+        <button id="addManualBtn" class="primary" type="button">조각 추가</button>
+        <button id="pasteBtn" type="button">붙여넣기</button>
+        <button id="clearManualBtn" type="button">입력 지우기</button>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
