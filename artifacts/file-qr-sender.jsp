@@ -1,9 +1,26 @@
 <%@page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
 
+<%--
+  개인용 단순 개선 버전
+
+  원본 JSP에서 유지:
+  - 서버 파일 절대 경로 입력
+  - 파일 bytes를 여러 QR 프레임으로 분할
+  - 화면에서 QR 애니메이션 재생
+
+  원본 대비 개선:
+  - payload는 FILE:V2 고정
+  - Base45로 QR alphanumeric mode 용량 활용
+  - 파일명은 Base45 길이 기반 필드로 구분자 충돌 방지
+  - QR 크기/조각 크기를 상단 상수로 분리
+
+--%>
+
 <%@page import="com.google.zxing.BarcodeFormat"%>
 <%@page import="com.google.zxing.EncodeHintType"%>
 <%@page import="com.google.zxing.common.BitMatrix"%>
 <%@page import="com.google.zxing.qrcode.QRCodeWriter"%>
+<%@page import="com.google.zxing.qrcode.decoder.ErrorCorrectionLevel"%>
 
 <%@page import="javax.imageio.ImageIO"%>
 <%@page import="java.awt.image.BufferedImage"%>
@@ -12,324 +29,276 @@
 <%@page import="java.io.IOException"%>
 <%@page import="java.nio.charset.StandardCharsets"%>
 <%@page import="java.nio.file.Files"%>
+
 <%@page import="java.util.ArrayList"%>
-<%@page import="java.util.Base64"%>
-<%@page import="java.util.HashMap"%>
 <%@page import="java.util.List"%>
+<%@page import="java.util.HashMap"%>
 <%@page import="java.util.Map"%>
+<%@page import="java.util.Base64"%>
 
 <%!
-// BEGIN TESTABLE CORE
-static final int FILE_CHUNK_SIZE = 1800;
-static final int QR_IMAGE_SIZE = 440;
-static final int MAX_FILE_BYTES = 2 * 1024 * 1024;
-static final int MAX_QR_COUNT = 1200;
+	static final int QR_IMAGE_SIZE = 640;
+	static final int MAX_QR_TEXT_CHARS = 4296;
+	static final String BASE45_CHARSET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
 
-static class FileQrPayload {
-  public final String mode;
-  public final String text;
-  public final String fileName;
-  public final String chunk;
-  public final int index;
-  public final int total;
-  public final int byteLength;
+	public static String escapeHtml(String input) {
+		if (input == null) return "";
+		return input.replace("&", "&amp;")
+				.replace("<", "&lt;")
+				.replace(">", "&gt;")
+				.replace("\"", "&quot;")
+				.replace("'", "&#x27;");
+	}
 
-  FileQrPayload(String mode, String text, String fileName, String chunk, int index, int total) {
-    this.mode = mode;
-    this.text = text;
-    this.fileName = fileName;
-    this.chunk = chunk;
-    this.index = index;
-    this.total = total;
-    this.byteLength = utf8Length(text);
-  }
-}
+	public static String sanitizeFileName(String fileName) {
+		String value = fileName == null ? "download.bin" : fileName.trim();
+		value = value.replace('\\', '_').replace('/', '_');
+		if (value.length() == 0) return "download.bin";
+		if (value.length() > 180) return value.substring(0, 180);
+		return value;
+	}
 
-public static List<FileQrPayload> buildFilePayloads(String fileName, byte[] fileBytes) {
-  return buildFilePayloads(fileName, fileBytes, FILE_CHUNK_SIZE, true);
-}
+	public static String base45Encode(byte[] bytes) {
+		StringBuilder output = new StringBuilder(((bytes.length + 1) / 2) * 3);
+		for (int i = 0; i < bytes.length; i += 2) {
+			if (i + 1 < bytes.length) {
+				int value = ((bytes[i] & 0xff) * 256) + (bytes[i + 1] & 0xff);
+				output.append(BASE45_CHARSET.charAt(value % 45));
+				value = value / 45;
+				output.append(BASE45_CHARSET.charAt(value % 45));
+				value = value / 45;
+				output.append(BASE45_CHARSET.charAt(value));
+			} else {
+				int value = bytes[i] & 0xff;
+				output.append(BASE45_CHARSET.charAt(value % 45));
+				value = value / 45;
+				output.append(BASE45_CHARSET.charAt(value));
+			}
+		}
+		return output.toString();
+	}
 
-public static List<FileQrPayload> buildFilePayloads(String fileName, byte[] fileBytes, int chunkSize, boolean useV1) {
-  if (fileName == null || fileName.trim().length() == 0) {
-    throw new IllegalArgumentException("File name is empty.");
-  }
-  if (fileBytes == null || fileBytes.length == 0) {
-    throw new IllegalArgumentException("File is empty.");
-  }
-  validateFileSize(fileBytes.length);
-  if (chunkSize < 1 || chunkSize > 2200) {
-    throw new IllegalArgumentException("Chunk size is out of supported range.");
-  }
+	public static String textBase45(String value) {
+		return base45Encode(value.getBytes(StandardCharsets.UTF_8));
+	}
 
-  String encoded = Base64.getEncoder().encodeToString(fileBytes);
-  int total = (encoded.length() + chunkSize - 1) / chunkSize;
-  if (total > MAX_QR_COUNT) {
-    throw new IllegalArgumentException("File requires too many QR frames. Maximum QR count is " + MAX_QR_COUNT + ".");
-  }
+	public static int base45CharsToMaxBytes(int charCount) {
+		if (charCount < 2) return 0;
+		int bytes = (charCount / 3) * 2;
+		if (charCount % 3 >= 2) bytes += 1;
+		return bytes;
+	}
 
-  String safeName = sanitizeFileName(fileName);
-  String encodedName = textBase64Url(safeName);
-  List<FileQrPayload> payloads = new ArrayList<FileQrPayload>();
+	public static byte[] sliceBytes(byte[] source, int start, int end) {
+		byte[] chunk = new byte[end - start];
+		System.arraycopy(source, start, chunk, 0, chunk.length);
+		return chunk;
+	}
 
-  for (int i = 0; i < total; i += 1) {
-    int start = i * chunkSize;
-    int end = Math.min(start + chunkSize, encoded.length());
-    String chunk = encoded.substring(start, end);
-    String text;
-    String mode;
+	public static String buildFileV2Payload(String safeFileName, int index, int total, byte[] chunk) {
+		String encodedName = textBase45(safeFileName);
+		return "FILE:V2:" + encodedName.length() + ":" + encodedName + ":" + index + ":" + total + ":" + base45Encode(chunk);
+	}
 
-    if (useV1) {
-      mode = "FILE:v1";
-      text = "FILE:v1:" + encodedName + ":" + (i + 1) + ":" + total + ":" + chunk;
-    } else {
-      mode = "FILE:legacy";
-      text = "FILE:" + safeName + ":" + (i + 1) + "/" + total + ":" + chunk;
-    }
+	public static int calculateFileChunkBytes(String safeFileName, int byteLength) {
+		String encodedName = textBase45(safeFileName);
+		int encodedNameLength = encodedName.length();
+		int totalChunks = 1;
 
-    payloads.add(new FileQrPayload(mode, text, safeName, chunk, i + 1, total));
-  }
+		for (int guard = 0; guard < 10; guard += 1) {
+			int digits = String.valueOf(totalChunks).length();
+			int overhead = "FILE:V2:".length()
+					+ String.valueOf(encodedNameLength).length()
+					+ 1
+					+ encodedNameLength
+					+ 1 + digits
+					+ 1 + digits
+					+ 1;
+			int chunkChars = MAX_QR_TEXT_CHARS - overhead;
+			int chunkBytes = base45CharsToMaxBytes(chunkChars);
+			if (chunkBytes < 1) {
+				throw new IllegalArgumentException("파일명이 너무 길어 QR payload를 만들 수 없습니다.");
+			}
 
-  return payloads;
-}
+			int nextTotalChunks = (byteLength + chunkBytes - 1) / chunkBytes;
+			if (nextTotalChunks == totalChunks) {
+				return chunkBytes;
+			}
+			totalChunks = nextTotalChunks;
+		}
 
-public static String sanitizeFileName(String fileName) {
-  String value = fileName == null ? "download.bin" : fileName.trim();
-  value = value.replace('\\', '_').replace('/', '_');
-  if (value.length() == 0) return "download.bin";
-  if (value.length() > 180) return value.substring(0, 180);
-  return value;
-}
+		throw new IllegalArgumentException("QR chunk 크기 계산에 실패했습니다.");
+	}
 
-public static File resolveAllowedFile(String filePath, String allowedBaseDir) throws IOException {
-  if (allowedBaseDir == null || allowedBaseDir.trim().length() == 0) {
-    throw new IllegalArgumentException("FILE QR base directory is not configured.");
-  }
-  if (filePath == null || filePath.trim().length() == 0) {
-    throw new IllegalArgumentException("File path is empty.");
-  }
+	public static String generateQRCodeBase64(String text, int size) throws Exception {
+		QRCodeWriter qrWriter = new QRCodeWriter();
+		Map<EncodeHintType, Object> hints = new HashMap<EncodeHintType, Object>();
+		hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
+		hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.L);
+		hints.put(EncodeHintType.MARGIN, Integer.valueOf(2));
 
-  File baseDir = new File(allowedBaseDir).getCanonicalFile();
-  File targetFile = new File(filePath).getCanonicalFile();
-  String basePath = baseDir.getPath();
-  String targetPath = targetFile.getPath();
+		BitMatrix bitMatrix = qrWriter.encode(text, BarcodeFormat.QR_CODE, size, size, hints);
+		BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_BYTE_BINARY);
 
-  if (!baseDir.exists() || !baseDir.isDirectory()) {
-    throw new IllegalArgumentException("Configured FILE QR base directory does not exist.");
-  }
-  if (!targetFile.exists() || !targetFile.isFile()) {
-    throw new IllegalArgumentException("File was not found in the configured base directory.");
-  }
-  if (!targetPath.equals(basePath) && !targetPath.startsWith(basePath + File.separator)) {
-    throw new IllegalArgumentException("Requested file is outside the configured FILE QR base directory.");
-  }
+		for (int y = 0; y < size; y += 1) {
+			for (int x = 0; x < size; x += 1) {
+				image.setRGB(x, y, bitMatrix.get(x, y) ? 0x000000 : 0xFFFFFF);
+			}
+		}
 
-  return targetFile;
-}
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		if (!ImageIO.write(image, "png", baos)) {
+			throw new IOException("PNG writer is not available.");
+		}
 
-public static void validateFileSize(long byteLength) {
-  if (byteLength <= 0) {
-    throw new IllegalArgumentException("File is empty.");
-  }
-  if (byteLength > MAX_FILE_BYTES) {
-    throw new IllegalArgumentException("File is too large. Maximum file size is " + MAX_FILE_BYTES + " bytes.");
-  }
-}
-
-public static String textBase64Url(String value) {
-  return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
-}
-
-public static String escapeHtml(String input) {
-  if (input == null) return "";
-  return input.replace("&", "&amp;")
-      .replace("<", "&lt;")
-      .replace(">", "&gt;")
-      .replace("\"", "&quot;")
-      .replace("'", "&#x27;");
-}
-
-public static int utf8Length(String value) {
-  return value == null ? 0 : value.getBytes(StandardCharsets.UTF_8).length;
-}
-// END TESTABLE CORE
-
-public static String createQrPngBase64(String text, int size) throws Exception {
-  QRCodeWriter qrWriter = new QRCodeWriter();
-  Map<EncodeHintType, Object> hints = new HashMap<EncodeHintType, Object>();
-  hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
-  hints.put(EncodeHintType.MARGIN, Integer.valueOf(2));
-
-  BitMatrix matrix = qrWriter.encode(text, BarcodeFormat.QR_CODE, size, size, hints);
-  BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_BYTE_BINARY);
-
-  for (int y = 0; y < size; y += 1) {
-    for (int x = 0; x < size; x += 1) {
-      image.setRGB(x, y, matrix.get(x, y) ? 0x000000 : 0xFFFFFF);
-    }
-  }
-
-  ByteArrayOutputStream out = new ByteArrayOutputStream();
-  if (!ImageIO.write(image, "png", out)) {
-    throw new IOException("PNG writer is not available.");
-  }
-  return Base64.getEncoder().encodeToString(out.toByteArray());
-}
+		return Base64.getEncoder().encodeToString(baos.toByteArray());
+	}
 %>
 
 <%
-String filePath = request.getParameter("filePath");
-String format = request.getParameter("format");
-String allowedBaseDir = application.getInitParameter("FILE_QR_BASE_DIR");
-if (allowedBaseDir == null || allowedBaseDir.trim().length() == 0) {
-  allowedBaseDir = System.getProperty("fileQr.baseDir");
-}
-boolean useV1 = !"legacy".equalsIgnoreCase(format);
-boolean submitted = "POST".equalsIgnoreCase(request.getMethod());
-String errorMessage = "";
-String sourceFileName = "";
-long sourceFileBytes = 0;
-List<FileQrPayload> payloads = new ArrayList<FileQrPayload>();
-List<String> frames = new ArrayList<String>();
+	String filePath = request.getParameter("filePath");
+	String errorMessage = "";
+	String fileName = "";
+	long fileSizeBytes = 0;
+	int usedChunkBytes = 0;
 
-if (submitted) {
-  if (filePath == null || filePath.trim().length() == 0) {
-    errorMessage = "파일 경로를 입력하세요.";
-  } else {
-    try {
-      File targetFile = resolveAllowedFile(filePath, allowedBaseDir);
-      validateFileSize(targetFile.length());
-      sourceFileName = targetFile.getName();
-      sourceFileBytes = targetFile.length();
-      byte[] fileBytes = Files.readAllBytes(targetFile.toPath());
-      payloads = buildFilePayloads(sourceFileName, fileBytes, FILE_CHUNK_SIZE, useV1);
+	List<String> qrBase64Images = new ArrayList<String>();
 
-      for (int i = 0; i < payloads.size(); i += 1) {
-        frames.add(createQrPngBase64(payloads.get(i).text, QR_IMAGE_SIZE));
-      }
-    } catch (Exception e) {
-      application.log("FILE QR generation failed", e);
-      errorMessage = "QR 생성 실패: " + (e.getMessage() == null ? e.getClass().getName() : e.getMessage());
-      payloads.clear();
-      frames.clear();
-    }
-  }
-}
+	if (filePath != null && !filePath.trim().isEmpty()) {
+		try {
+			File targetFile = new File(filePath);
+			if (!targetFile.exists() || !targetFile.isFile()) {
+				throw new Exception("지정된 경로에서 파일을 찾을 수 없습니다.");
+			}
+
+			fileName = sanitizeFileName(targetFile.getName());
+			fileSizeBytes = targetFile.length();
+
+			byte[] fileBytes = Files.readAllBytes(targetFile.toPath());
+
+			usedChunkBytes = calculateFileChunkBytes(fileName, fileBytes.length);
+			int totalChunks = (fileBytes.length + usedChunkBytes - 1) / usedChunkBytes;
+
+			for (int i = 0; i < totalChunks; i++) {
+				int start = i * usedChunkBytes;
+				int end = Math.min(start + usedChunkBytes, fileBytes.length);
+				byte[] chunk = sliceBytes(fileBytes, start, end);
+
+				String qrText = buildFileV2Payload(fileName, i + 1, totalChunks, chunk);
+				if (qrText.length() > MAX_QR_TEXT_CHARS) {
+					throw new Exception("QR payload가 너무 큽니다: " + qrText.length() + " chars");
+				}
+				qrBase64Images.add(generateQRCodeBase64(qrText, QR_IMAGE_SIZE));
+			}
+		} catch (Exception e) {
+			errorMessage = escapeHtml(e.getMessage());
+			qrBase64Images.clear();
+		}
+	}
 %>
 
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FILE QR 송신기</title>
-<style>
-body{margin:0;padding:24px;background:#f5f7fa;color:#17181a;font-family:Arial,"Malgun Gothic",sans-serif}
-.wrap{width:min(960px,100%);margin:0 auto}
-.panel{margin-top:14px;padding:16px;border:1px solid #d4dbe5;border-radius:8px;background:#fff}
-label{display:block;margin:10px 0 5px;font-weight:700}
-input[type=text]{width:100%;box-sizing:border-box;padding:10px;border:1px solid #9aa3af;border-radius:5px;font-family:Consolas,"Courier New",monospace}
-select,button{min-height:40px;margin-top:10px;padding:8px 12px;border:1px solid #7b8491;border-radius:5px;background:#f7f8fa;font-size:15px}
-button.primary{border-color:#0b57d0;background:#0b57d0;color:#fff}
-.error{border-color:#d92d20;background:#fff4f2;color:#b42318}
-.summary{line-height:1.7}
-.player{text-align:center}
-#qrImage{width:100%;max-width:<%= QR_IMAGE_SIZE %>px;height:auto;border:8px solid #111;background:#fff}
-.status{margin-top:10px;font-weight:700}
-.controls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px}
-.payload{width:100%;min-height:90px;margin-top:8px;font-family:Consolas,"Courier New",monospace;font-size:12px}
-</style>
+	<meta charset="UTF-8">
+	<title>FILE:V2 QR 송신기</title>
+	<style>
+		body { font-family: sans-serif; padding: 20px; background-color: #f4f4f4; margin: 0; text-align: center;}
+		.container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); border-radius: 8px;}
+		input[type="text"] { width: 100%; padding: 10px; box-sizing: border-box; margin-bottom: 10px; font-family: monospace; }
+		button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #0056b3; color: white; border: none; border-radius: 4px;}
+		.error-msg { color: red; font-weight: bold; margin-top: 10px; }
+		.player-area { text-align: center; margin-top: 30px; border: 2px solid #333; padding: 20px; background-color: #fff;}
+		#qrImage { border: 8px solid #000; display: inline-block; max-width: 100%; height: auto; }
+		.controls { margin-top: 20px; }
+		.controls button { background-color: #333; margin: 0 5px; }
+		.status { font-size: 20px; font-weight: bold; margin-top: 10px; }
+		.file-info { background: #e9ecef; padding: 10px; margin-top: 20px; text-align: left; }
+	</style>
 </head>
 <body>
-<div class="wrap">
-  <h1>FILE QR 송신기</h1>
+	<div class="container">
+		<h2>FILE:V2 Base45 대용량 QR 송신기</h2>
+		<form method="post" action="">
+			<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">서버 내 파일 절대 경로 입력</label>
+			<input type="text" name="filePath" value="<%= escapeHtml(filePath) %>" placeholder="C:\temp\sample.pptx">
+			<button type="submit">QR 스트림 생성</button>
+		</form>
 
-  <div class="panel">
-    <p class="summary">허용 디렉터리: <strong><%= escapeHtml(allowedBaseDir) %></strong></p>
-    <form method="post" action="">
-      <label for="filePath">서버 파일 절대 경로</label>
-      <input id="filePath" type="text" name="filePath" value="<%= escapeHtml(filePath) %>" placeholder="C:\temp\sample.bin">
+		<% if (!errorMessage.isEmpty()) { %>
+			<div class="error-msg">오류 발생: <%= errorMessage %></div>
+		<% } %>
 
-      <label for="format">payload 형식</label>
-      <select id="format" name="format">
-        <option value="v1" <%= useV1 ? "selected" : "" %>>FILE:v1</option>
-        <option value="legacy" <%= !useV1 ? "selected" : "" %>>FILE legacy</option>
-      </select>
-      <br>
-      <button class="primary" type="submit">QR 스트림 생성</button>
-    </form>
-  </div>
+		<% if (!qrBase64Images.isEmpty()) { %>
+			<div class="file-info">
+				<strong>파일명:</strong> <%= escapeHtml(fileName) %><br>
+				<strong>파일 크기:</strong> <%= fileSizeBytes %> bytes<br>
+				<strong>payload 형식:</strong> FILE:V2 / Base45<br>
+				<strong>총 생성 프레임:</strong> <%= qrBase64Images.size() %>장<br>
+				<strong>QR 이미지:</strong> <%= QR_IMAGE_SIZE %>px /
+				<strong>chunk:</strong> <%= usedChunkBytes %> bytes /
+				<strong>QR 최대 payload:</strong> <%= MAX_QR_TEXT_CHARS %> chars
+			</div>
 
-  <% if (errorMessage.length() > 0) { %>
-    <div class="panel error"><%= escapeHtml(errorMessage) %></div>
-  <% } %>
+			<div class="player-area">
+				<img id="qrImage" src="" alt="QR Stream" width="<%= QR_IMAGE_SIZE %>" height="<%= QR_IMAGE_SIZE %>" />
+				<div class="status" id="frameStatus">준비됨</div>
 
-  <% if (!payloads.isEmpty()) { %>
-    <div class="panel summary">
-      <strong>파일명:</strong> <%= escapeHtml(sourceFileName) %><br>
-      <strong>파일 크기:</strong> <%= sourceFileBytes %> bytes<br>
-      <strong>payload 형식:</strong> <%= escapeHtml(payloads.get(0).mode) %><br>
-      <strong>QR 프레임:</strong> <%= payloads.size() %>장<br>
-      <strong>프레임 payload:</strong> 최대 <%= FILE_CHUNK_SIZE %> chars
-    </div>
+				<div class="controls">
+					<button onclick="startPlay()" type="button">▶ 재생</button>
+					<button onclick="stopPlay()" type="button">⏸ 일시정지</button>
+					<button onclick="resetPlay()" type="button">⏹ 처음으로</button>
+				</div>
+			</div>
 
-    <div class="panel player">
-      <img id="qrImage" alt="FILE QR frame" src="">
-      <div id="frameStatus" class="status">대기</div>
-      <div class="controls">
-        <button type="button" onclick="startPlay()">재생</button>
-        <button type="button" onclick="stopPlay()">일시정지</button>
-        <button type="button" onclick="resetPlay()">처음</button>
-      </div>
-    </div>
+			<script>
+				var qrFrames = [
+					<% for(int i = 0; i < qrBase64Images.size(); i++) { %>
+						"data:image/png;base64,<%=qrBase64Images.get(i)%>"<%= i < qrBase64Images.size() - 1 ? "," : "" %>
+					<% } %>
+				];
 
-    <div class="panel">
-      <details>
-        <summary>payload 확인</summary>
-        <textarea class="payload" readonly><% for (int i = 0; i < payloads.size(); i += 1) { %><%= escapeHtml(payloads.get(i).text) %><%= i + 1 < payloads.size() ? "\n" : "" %><% } %></textarea>
-      </details>
-    </div>
+				var currentIndex = 0;
+				var playInterval = null;
+				var imgElement = document.getElementById("qrImage");
+				var statusElement = document.getElementById("frameStatus");
 
-    <script>
-      var qrFrames = [
-        <% for (int i = 0; i < frames.size(); i += 1) { %>
-          "data:image/png;base64,<%= frames.get(i) %>"<%= i + 1 < frames.size() ? "," : "" %>
-        <% } %>
-      ];
-      var currentIndex = 0;
-      var playInterval = null;
-      var qrImage = document.getElementById("qrImage");
-      var frameStatus = document.getElementById("frameStatus");
+				if(qrFrames.length > 0) {
+					imgElement.src = qrFrames[0];
+					updateStatus();
+				}
 
-      function renderFrame() {
-        if (!qrFrames.length) return;
-        qrImage.src = qrFrames[currentIndex];
-        frameStatus.textContent = (currentIndex + 1) + " / " + qrFrames.length;
-      }
+				function updateStatus() {
+					statusElement.innerText = (currentIndex + 1) + " / " + qrFrames.length + " 프레임";
+				}
 
-      function nextFrame() {
-        currentIndex = (currentIndex + 1) % qrFrames.length;
-        renderFrame();
-      }
+				function nextFrame() {
+					currentIndex++;
+					if (currentIndex >= qrFrames.length) {
+						currentIndex = 0;
+					}
+					imgElement.src = qrFrames[currentIndex];
+					updateStatus();
+				}
 
-      function startPlay() {
-        stopPlay();
-        playInterval = setInterval(nextFrame, 150);
-      }
+				function startPlay() {
+					if (playInterval) clearInterval(playInterval);
+					playInterval = setInterval(nextFrame, 150);
+				}
 
-      function stopPlay() {
-        if (playInterval) clearInterval(playInterval);
-        playInterval = null;
-      }
+				function stopPlay() {
+					if (playInterval) clearInterval(playInterval);
+					playInterval = null;
+				}
 
-      function resetPlay() {
-        stopPlay();
-        currentIndex = 0;
-        renderFrame();
-      }
-
-      renderFrame();
-    </script>
-  <% } %>
-</div>
+				function resetPlay() {
+					stopPlay();
+					currentIndex = 0;
+					imgElement.src = qrFrames[0];
+					updateStatus();
+				}
+			</script>
+		<% } %>
+	</div>
 </body>
 </html>

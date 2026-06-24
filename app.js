@@ -1,7 +1,6 @@
 import {
   addFileChunk,
-  assembleFileBase64,
-  base64ToBytes,
+  assembleFileBytes,
   createFileCollector,
   getMissingIndexes,
   getReceivedIndexes,
@@ -30,7 +29,7 @@ var pasteBtn = document.getElementById("pasteBtn");
 var clearManualBtn = document.getElementById("clearManualBtn");
 
 var collector = createFileCollector();
-var completeBase64 = "";
+var completeBytes = null;
 
 var scanner = createQrScanner({
   video: video,
@@ -97,18 +96,16 @@ function addPayload(rawValue) {
   }
 
   if (result.complete) {
-    var assembled = assembleFileBase64(collector);
     try {
-      base64ToBytes(assembled);
+      completeBytes = assembleFileBytes(collector);
     } catch (error) {
-      completeBase64 = "";
+      completeBytes = null;
       downloadBtn.disabled = true;
       setStatus(error && error.message ? error.message : "파일 payload 검증 실패", "error");
       renderProgress();
       return;
     }
 
-    completeBase64 = assembled;
     setStatus("수신 완료", "ok");
     downloadBtn.disabled = false;
     if (scanner.isRunning()) {
@@ -131,7 +128,7 @@ function renderProgress() {
   fileName.textContent = collector.fileName || "-";
   progressText.textContent = received.length + " / " + total;
   progressBar.style.width = percent + "%";
-  streamState.textContent = completeBase64 ? "완료" : collector.fileId ? "수신 중" : "대기";
+  streamState.textContent = completeBytes ? "완료" : collector.fileId ? "수신 중" : "대기";
   chunkStatus.textContent = collector.fileId
     ? [
         "받은 조각: " + (received.length ? received.join(", ") : "-"),
@@ -147,7 +144,7 @@ function resetAll() {
   }
 
   collector = createFileCollector();
-  completeBase64 = "";
+  completeBytes = null;
   downloadBtn.disabled = true;
   manualInput.value = "";
   updateManualMeter();
@@ -171,14 +168,13 @@ async function startScanner() {
 }
 
 function triggerDownload() {
-  if (!completeBase64) {
+  if (!completeBytes) {
     setStatus("수신 완료 후 다운로드할 수 있습니다.", "error");
     return;
   }
 
   try {
-    var bytes = base64ToBytes(completeBase64);
-    var blob = new Blob([bytes], { type: "application/octet-stream" });
+    var blob = new Blob([completeBytes], { type: "application/octet-stream" });
     var url = URL.createObjectURL(blob);
     var anchor = document.createElement("a");
     anchor.href = url;

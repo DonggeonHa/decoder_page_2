@@ -17,6 +17,8 @@ test("JSP dev server wiring exists", () => {
 
   assert.match(pom, /tomcat-embed-jasper/);
   assert.match(pom, /com.google.zxing/);
-  assert.match(runner, /fileQr.baseDir/);
   assert.match(runner, /resolve\("artifacts"\)/);
+  assert.match(runner, /resolve\("jsp-test-files"\)/);
+  assert.match(runner, /Test files directory/);
+  assert.doesNotMatch(runner, /fileQr\.baseDir|Allowed file base|allowedBaseDir/);
 });
