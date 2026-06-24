@@ -222,6 +222,52 @@ dd {
   transition: width 120ms ease;
 }
 
+.section-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.section-empty,
+.section-item {
+  min-height: 76px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fafbfc;
+}
+
+.section-item.complete {
+  border-color: #75b798;
+  background: #eefaf3;
+}
+
+.section-item.active {
+  border-color: var(--primary);
+  background: #f1f6ff;
+}
+
+.section-name {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.section-count {
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.section-missing {
+  margin-top: 4px;
+  color: var(--muted);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .chunk-status {
   min-height: 74px;
   margin: 12px 0 0;

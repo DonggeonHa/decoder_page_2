@@ -4,19 +4,25 @@
 
 ## 지원 포맷
 
-첨부 JSP 호환 포맷:
+legacy 호환 포맷:
 
 ```text
 FILE:<fileName>:<index>/<total>:<base64Chunk>
 ```
 
-권장 v1 포맷:
+호환 v1 포맷:
 
 ```text
 FILE:v1:<fileNameBase64Url>:<index>:<total>:<base64Chunk>
 ```
 
-v1은 파일명을 Base64URL로 감싸서 `:` 같은 문자가 들어간 파일명도 안전하게 처리합니다.
+권장 V2 포맷:
+
+```text
+FILE:V2:<nameLength>:<fileNameBase45>:<index>:<total>:<base45Chunk>
+```
+
+V2는 Base45를 사용해 QR alphanumeric mode 용량을 더 많이 활용합니다.
 
 ## 로컬 테스트
 
@@ -35,6 +41,7 @@ npm run jsp:dev
 - Android Chrome 권장
 - 카메라 스캔은 HTTPS 또는 Chrome 로컬 테스트 환경 권장
 - 디코더에서 누락 조각이 표시되면 폰 화면의 재전송 입력값을 보고 폐쇄망 PC의 JSP에 직접 입력합니다.
+- 디코더는 100개 단위 수신 구간을 표시하고, 현재 수신 상태를 IndexedDB에 임시 저장합니다.
 
 ## 폐쇄망 JSP
 
@@ -46,18 +53,9 @@ JSP 아티팩트는 [artifacts/file-qr-sender.jsp](artifacts/file-qr-sender.jsp)
 com.google.zxing:core
 ```
 
-JSP는 서버 내 파일 절대 경로를 입력받아 파일 bytes를 Base64로 인코딩하고 QR 프레임으로 나눕니다. 기본 출력은 `FILE:v1`이며 legacy 형식도 선택할 수 있습니다.
+JSP는 서버 내 파일 절대 경로를 입력받아 파일 bytes를 Base45로 인코딩하고 QR 프레임으로 나눕니다. 출력은 `FILE:V2` 고정입니다.
 
-보안을 위해 JSP는 허용 디렉터리 안의 파일만 읽습니다. WAS `web.xml` context-param `FILE_QR_BASE_DIR` 또는 JVM system property `fileQr.baseDir` 중 하나를 설정해야 합니다.
-
-```xml
-<context-param>
-  <param-name>FILE_QR_BASE_DIR</param-name>
-  <param-value>C:\approved-transfer</param-value>
-</context-param>
-```
-
-허용 디렉터리가 비어 있거나 요청 파일이 그 밖에 있으면 JSP는 파일을 읽지 않습니다.
+전송 모드는 전체 전송, 100개 구간 전송, 누락 조각만 재전송을 지원합니다.
 
 ## 개인정보 처리
 

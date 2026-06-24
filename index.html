@@ -49,16 +49,22 @@
           <dt>상태</dt>
           <dd id="streamState">대기</dd>
         </div>
+        <div>
+          <dt>임시 저장</dt>
+          <dd id="restoreState">확인 중</dd>
+        </div>
       </dl>
 
       <div class="progress-track" aria-hidden="true">
         <div id="progressBar" class="progress-fill"></div>
       </div>
 
+      <div id="sectionList" class="section-list" aria-label="100개 단위 수신 구간"></div>
+
       <pre id="chunkStatus" class="chunk-status">수신된 조각 없음</pre>
 
       <div class="resend-box">
-        <div class="resend-label">JSP 재전송 입력값</div>
+        <div class="resend-label">현재 구간 JSP 재전송 입력값</div>
         <div id="resendRanges" class="resend-ranges">-</div>
         <p>폰 화면의 이 값을 보고 폐쇄망 PC의 누락 조각 범위 칸에 직접 입력하세요.</p>
       </div>

@@ -8,7 +8,10 @@ import {
   createFileCollector,
   formatIndexRanges,
   getMissingIndexes,
+  getSectionSummaries,
+  hydrateFileCollector,
   parseQrPayload,
+  serializeFileCollector,
   textToBase64Url
 } from "../protocol.js";
 
@@ -169,4 +172,78 @@ test("formats missing indexes as compact resend ranges", () => {
   assert.equal(formatIndexRanges([]), "-");
   assert.equal(formatIndexRanges([1, 2, 3, 7, 10, 11, 12]), "1-3, 7, 10-12");
   assert.equal(formatIndexRanges([9, 4, 5, 5, 6, 2]), "2, 4-6, 9");
+});
+
+test("summarizes received and missing chunks by transfer section", () => {
+  const collector = createFileCollector();
+  collector.fileId = "v2:test:250";
+  collector.fileName = "deck.pptx";
+  collector.encoding = "base45";
+  collector.total = 250;
+  collector.chunks[1] = "AA";
+  collector.chunks[2] = "BB";
+  collector.chunks[100] = "CC";
+  collector.chunks[101] = "DD";
+  collector.chunks[250] = "EE";
+
+  assert.deepEqual(getSectionSummaries(collector, 100), [
+    {
+      section: 1,
+      start: 1,
+      end: 100,
+      total: 100,
+      received: 3,
+      missing: 97,
+      complete: false,
+      missingRanges: "3-99"
+    },
+    {
+      section: 2,
+      start: 101,
+      end: 200,
+      total: 100,
+      received: 1,
+      missing: 99,
+      complete: false,
+      missingRanges: "102-200"
+    },
+    {
+      section: 3,
+      start: 201,
+      end: 250,
+      total: 50,
+      received: 1,
+      missing: 49,
+      complete: false,
+      missingRanges: "201-249"
+    }
+  ]);
+});
+
+test("serializes and hydrates collector state for browser persistence", () => {
+  const collector = createFileCollector();
+  collector.fileId = "v2:persist:3";
+  collector.fileName = "persist.pptx";
+  collector.encoding = "base45";
+  collector.total = 3;
+  collector.chunks[1] = "AA";
+  collector.chunks[3] = "CC";
+
+  const serialized = serializeFileCollector(collector);
+  assert.deepEqual(serialized, {
+    version: 1,
+    fileId: "v2:persist:3",
+    fileName: "persist.pptx",
+    encoding: "base45",
+    total: 3,
+    chunks: { "1": "AA", "3": "CC" }
+  });
+
+  const hydrated = hydrateFileCollector(serialized);
+  assert.equal(hydrated.fileId, collector.fileId);
+  assert.equal(hydrated.fileName, collector.fileName);
+  assert.equal(hydrated.encoding, collector.encoding);
+  assert.equal(hydrated.total, collector.total);
+  assert.deepEqual(Object.assign({}, hydrated.chunks), { "1": "AA", "3": "CC" });
+  assert.deepEqual(getMissingIndexes(hydrated), [2]);
 });

@@ -41,6 +41,7 @@
 	static final int MAX_QR_TEXT_CHARS = 4296;
 	static final int BALANCED_QR_TEXT_CHARS = 3800;
 	static final int STABLE_QR_TEXT_CHARS = 3400;
+	static final int SECTION_SIZE = 100;
 	static final String BASE45_CHARSET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
 
 	public static String escapeHtml(String input) {
@@ -126,10 +127,35 @@
 		return frameDelayMs == 0 ? "수동" : frameDelayMs + "ms";
 	}
 
+	public static int normalizeSectionNumber(String value) {
+		try {
+			int sectionNumber = Integer.parseInt(value == null ? "" : value.trim());
+			if (sectionNumber > 0) return sectionNumber;
+		} catch (Exception ignored) {
+		}
+		return 1;
+	}
+
 	public static List<Integer> buildAllIndexes(int totalChunks) {
 		List<Integer> indexes = new ArrayList<Integer>();
 		for (int i = 1; i <= totalChunks; i += 1) {
 			indexes.add(Integer.valueOf(i));
+		}
+		return indexes;
+	}
+
+	public static List<Integer> buildSectionIndexes(String value, int totalChunks) {
+		int sectionNumber = normalizeSectionNumber(value);
+		int sectionCount = (totalChunks + SECTION_SIZE - 1) / SECTION_SIZE;
+		if (sectionNumber < 1 || sectionNumber > sectionCount) {
+			throw new IllegalArgumentException("구간 번호가 전체 구간 범위를 벗어났습니다: " + sectionNumber);
+		}
+
+		int start = ((sectionNumber - 1) * SECTION_SIZE) + 1;
+		int end = Math.min(sectionNumber * SECTION_SIZE, totalChunks);
+		List<Integer> indexes = new ArrayList<Integer>();
+		for (int index = start; index <= end; index += 1) {
+			indexes.add(Integer.valueOf(index));
 		}
 		return indexes;
 	}
@@ -244,8 +270,10 @@
 
 <%
 	String filePath = request.getParameter("filePath");
-	String sendMode = "missing".equals(request.getParameter("sendMode")) ? "missing" : "all";
+	String rawSendMode = request.getParameter("sendMode");
+	String sendMode = "missing".equals(rawSendMode) ? "missing" : "section".equals(rawSendMode) ? "section" : "all";
 	String missingRanges = request.getParameter("missingRanges");
+	String sectionNumber = request.getParameter("sectionNumber");
 	String densityMode = normalizeDensityMode(request.getParameter("densityMode"));
 	int maxQrTextChars = maxQrTextCharsForMode(densityMode);
 	int frameDelayMs = normalizeFrameDelayMs(request.getParameter("frameDelayMs"));
@@ -254,6 +282,9 @@
 	long fileSizeBytes = 0;
 	int usedChunkBytes = 0;
 	int totalChunks = 0;
+	int sectionCount = 0;
+	int generatedStartIndex = 0;
+	int generatedEndIndex = 0;
 
 	List<String> qrBase64Images = new ArrayList<String>();
 	List<String> qrFrameLabels = new ArrayList<String>();
@@ -272,9 +303,17 @@
 
 			usedChunkBytes = calculateFileChunkBytes(fileName, fileBytes.length, maxQrTextChars);
 			totalChunks = (fileBytes.length + usedChunkBytes - 1) / usedChunkBytes;
-			List<Integer> requestedIndexes = "missing".equals(sendMode)
-					? parseRequestedIndexes(missingRanges, totalChunks)
-					: buildAllIndexes(totalChunks);
+			sectionCount = (totalChunks + SECTION_SIZE - 1) / SECTION_SIZE;
+			List<Integer> requestedIndexes;
+			if ("missing".equals(sendMode)) {
+				requestedIndexes = parseRequestedIndexes(missingRanges, totalChunks);
+			} else if ("section".equals(sendMode)) {
+				requestedIndexes = buildSectionIndexes(sectionNumber, totalChunks);
+			} else {
+				requestedIndexes = buildAllIndexes(totalChunks);
+			}
+			generatedStartIndex = requestedIndexes.get(0).intValue();
+			generatedEndIndex = requestedIndexes.get(requestedIndexes.size() - 1).intValue();
 
 			for (int i = 0; i < requestedIndexes.size(); i++) {
 				int chunkIndex = requestedIndexes.get(i).intValue();
@@ -330,6 +369,7 @@
 					<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">전송 모드</label>
 					<select name="sendMode">
 						<option value="all" <%= "all".equals(sendMode) ? "selected" : "" %>>전체 전송</option>
+						<option value="section" <%= "section".equals(sendMode) ? "selected" : "" %>>100개 구간 전송</option>
 						<option value="missing" <%= "missing".equals(sendMode) ? "selected" : "" %>>누락 조각만 재전송</option>
 					</select>
 				</div>
@@ -342,6 +382,9 @@
 					</select>
 				</div>
 			</div>
+			<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">구간 번호</label>
+			<input type="text" name="sectionNumber" value="<%= escapeHtml(sectionNumber) %>" placeholder="1">
+			<div class="hint">100개 구간 전송 모드에서 사용합니다. 1구간은 1-100, 2구간은 101-200입니다.</div>
 			<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">누락 조각 범위</label>
 			<input type="text" name="missingRanges" value="<%= escapeHtml(missingRanges) %>" placeholder="444, 501-508">
 			<div class="hint">폰 화면에 표시된 값을 보고 직접 입력한 뒤 전송 모드를 누락 조각만 재전송으로 선택하세요.</div>
@@ -366,7 +409,9 @@
 				<strong>payload 형식:</strong> FILE:V2 / Base45<br>
 				<strong>전체 FILE 프레임:</strong> <%= totalChunks %>장<br>
 				<strong>이번 생성 프레임:</strong> <%= qrBase64Images.size() %>장<br>
-				<strong>전송 모드:</strong> <%= "missing".equals(sendMode) ? "누락 조각만 재전송" : "전체 전송" %><br>
+				<strong>100개 구간:</strong> <%= sectionCount %>개<br>
+				<strong>이번 생성 범위:</strong> <%= generatedStartIndex %>-<%= generatedEndIndex %><br>
+				<strong>전송 모드:</strong> <%= "missing".equals(sendMode) ? "누락 조각만 재전송" : "section".equals(sendMode) ? "100개 구간 전송" : "전체 전송" %><br>
 				<strong>밀도:</strong> <%= escapeHtml(densityMode) %><br>
 				<strong>재생 간격:</strong> <%= frameDelayLabel(frameDelayMs) %><br>
 				<strong>QR 이미지:</strong> <%= QR_IMAGE_SIZE %>px /

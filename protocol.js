@@ -302,6 +302,87 @@ export function formatIndexRanges(indexes) {
   return ranges.join(", ");
 }
 
+export function getSectionSummaries(collector, sectionSize) {
+  if (!collector || !collector.total) return [];
+
+  var size = Number(sectionSize) || 100;
+  if (!Number.isInteger(size) || size < 1) size = 100;
+
+  var summaries = [];
+  var sectionCount = Math.ceil(collector.total / size);
+
+  for (var section = 1; section <= sectionCount; section += 1) {
+    var start = (section - 1) * size + 1;
+    var end = Math.min(section * size, collector.total);
+    var total = end - start + 1;
+    var received = 0;
+    var missingIndexes = [];
+
+    for (var index = start; index <= end; index += 1) {
+      if (collector.chunks[index]) {
+        received += 1;
+      } else {
+        missingIndexes.push(index);
+      }
+    }
+
+    summaries.push({
+      section: section,
+      start: start,
+      end: end,
+      total: total,
+      received: received,
+      missing: total - received,
+      complete: received === total,
+      missingRanges: formatIndexRanges(missingIndexes)
+    });
+  }
+
+  return summaries;
+}
+
+export function serializeFileCollector(collector) {
+  var chunks = {};
+  if (collector && collector.chunks) {
+    var keys = Object.keys(collector.chunks);
+    for (var i = 0; i < keys.length; i += 1) {
+      chunks[keys[i]] = collector.chunks[keys[i]];
+    }
+  }
+
+  return {
+    version: 1,
+    fileId: collector && collector.fileId ? collector.fileId : "",
+    fileName: collector && collector.fileName ? collector.fileName : "",
+    encoding: collector && collector.encoding ? collector.encoding : "",
+    total: collector && collector.total ? collector.total : 0,
+    chunks: chunks
+  };
+}
+
+export function hydrateFileCollector(state) {
+  var collector = createFileCollector();
+  if (!state || state.version !== 1) return collector;
+
+  collector.fileId = typeof state.fileId === "string" ? state.fileId : "";
+  collector.fileName = typeof state.fileName === "string" ? state.fileName : "";
+  collector.encoding = typeof state.encoding === "string" ? state.encoding : "";
+  collector.total = Number.isInteger(state.total) && state.total > 0 ? state.total : 0;
+
+  if (state.chunks && typeof state.chunks === "object") {
+    var keys = Object.keys(state.chunks);
+    for (var i = 0; i < keys.length; i += 1) {
+      var index = Number(keys[i]);
+      var chunk = state.chunks[keys[i]];
+      if (Number.isInteger(index) && index > 0 && index <= collector.total && typeof chunk === "string" && chunk) {
+        collector.chunks[index] = chunk;
+      }
+    }
+  }
+
+  return collector;
+}
+
 export function assembleFileBase64(collector) {
   if (!isFileCollectorComplete(collector)) {
     throw new Error("Cannot assemble incomplete FILE stream.");

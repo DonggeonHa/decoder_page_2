@@ -24,9 +24,13 @@ test("JSP sender is FILE:V2 Base45 and reads the typed file path directly", () =
   assert.match(jsp, /Files\.readAllBytes/);
   assert.match(jsp, /static final int QR_IMAGE_SIZE = 640/);
   assert.match(jsp, /static final int MAX_QR_TEXT_CHARS = 4296/);
+  assert.match(jsp, /static final int SECTION_SIZE = 100/);
   assert.match(jsp, /calculateFileChunkBytes/);
+  assert.match(jsp, /buildSectionIndexes/);
   assert.match(jsp, /parseRequestedIndexes/);
   assert.match(jsp, /name="sendMode"/);
+  assert.match(jsp, /value="section"/);
+  assert.match(jsp, /name="sectionNumber"/);
   assert.match(jsp, /name="missingRanges"/);
   assert.match(jsp, /name="densityMode"/);
   assert.match(jsp, /name="frameDelayMs"/);
