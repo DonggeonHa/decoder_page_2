@@ -23,7 +23,8 @@ test("JSP sender is FILE:V2 Base45 and reads the typed file path directly", () =
   assert.match(jsp, /new File\(filePath\)/);
   assert.match(jsp, /Files\.readAllBytes/);
   assert.match(jsp, /static final int QR_IMAGE_SIZE = 640/);
-  assert.match(jsp, /static final int MAX_QR_TEXT_CHARS = 4296/);
+  assert.match(jsp, /static final int QR_TEXT_CHARS = 3800/);
+  assert.match(jsp, /static final int FRAME_DELAY_MS = 250/);
   assert.match(jsp, /static final int SECTION_SIZE = 100/);
   assert.match(jsp, /calculateFileChunkBytes/);
   assert.match(jsp, /buildSectionIndexes/);
@@ -32,8 +33,6 @@ test("JSP sender is FILE:V2 Base45 and reads the typed file path directly", () =
   assert.match(jsp, /value="section"/);
   assert.match(jsp, /name="sectionNumber"/);
   assert.match(jsp, /name="missingRanges"/);
-  assert.match(jsp, /name="densityMode"/);
-  assert.match(jsp, /name="frameDelayMs"/);
   assert.match(jsp, /qrFrameLabels/);
   assert.match(jsp, /폰 화면에 표시된 값을 보고 직접 입력/);
   assert.match(jsp, /ErrorCorrectionLevel\.L/);
@@ -43,6 +42,7 @@ test("JSP sender is FILE:V2 Base45 and reads the typed file path directly", () =
   assert.doesNotMatch(jsp, /resolveAllowedFile|FILE_QR_BASE_DIR|fileQr\.baseDir|allowedBaseDir/);
   assert.doesNotMatch(jsp, /qrPayloadTexts|payload 확인|payload-text|<textarea|<details/);
   assert.doesNotMatch(jsp, /붙여넣/);
+  assert.doesNotMatch(jsp, /name="densityMode"|name="frameDelayMs"|normalizeDensityMode|maxQrTextCharsForMode|normalizeFrameDelayMs|STABLE_QR_TEXT_CHARS|MAX_QR_TEXT_CHARS|value="400"|value="150"|수동 넘김/);
 });
 
 test("JSP FILE:V2 payload shape is accepted by the decoder protocol", () => {

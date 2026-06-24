@@ -38,9 +38,8 @@
 
 <%!
 	static final int QR_IMAGE_SIZE = 640;
-	static final int MAX_QR_TEXT_CHARS = 4296;
-	static final int BALANCED_QR_TEXT_CHARS = 3800;
-	static final int STABLE_QR_TEXT_CHARS = 3400;
+	static final int QR_TEXT_CHARS = 3800;
+	static final int FRAME_DELAY_MS = 250;
 	static final int SECTION_SIZE = 100;
 	static final String BASE45_CHARSET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
 
@@ -101,30 +100,6 @@
 	public static String buildFileV2Payload(String safeFileName, int index, int total, byte[] chunk) {
 		String encodedName = textBase45(safeFileName);
 		return "FILE:V2:" + encodedName.length() + ":" + encodedName + ":" + index + ":" + total + ":" + base45Encode(chunk);
-	}
-
-	public static String normalizeDensityMode(String value) {
-		if ("balanced".equals(value) || "stable".equals(value)) return value;
-		return "max";
-	}
-
-	public static int maxQrTextCharsForMode(String densityMode) {
-		if ("stable".equals(densityMode)) return STABLE_QR_TEXT_CHARS;
-		if ("balanced".equals(densityMode)) return BALANCED_QR_TEXT_CHARS;
-		return MAX_QR_TEXT_CHARS;
-	}
-
-	public static int normalizeFrameDelayMs(String value) {
-		try {
-			int delay = Integer.parseInt(value == null ? "" : value.trim());
-			if (delay == 0 || delay == 150 || delay == 250 || delay == 400) return delay;
-		} catch (Exception ignored) {
-		}
-		return 250;
-	}
-
-	public static String frameDelayLabel(int frameDelayMs) {
-		return frameDelayMs == 0 ? "수동" : frameDelayMs + "ms";
 	}
 
 	public static int normalizeSectionNumber(String value) {
@@ -213,7 +188,7 @@
 		return indexes;
 	}
 
-	public static int calculateFileChunkBytes(String safeFileName, int byteLength, int maxQrTextChars) {
+	public static int calculateFileChunkBytes(String safeFileName, int byteLength) {
 		String encodedName = textBase45(safeFileName);
 		int encodedNameLength = encodedName.length();
 		int totalChunks = 1;
@@ -227,7 +202,7 @@
 					+ 1 + digits
 					+ 1 + digits
 					+ 1;
-			int chunkChars = maxQrTextChars - overhead;
+			int chunkChars = QR_TEXT_CHARS - overhead;
 			int chunkBytes = base45CharsToMaxBytes(chunkChars);
 			if (chunkBytes < 1) {
 				throw new IllegalArgumentException("파일명이 너무 길어 QR payload를 만들 수 없습니다.");
@@ -274,9 +249,6 @@
 	String sendMode = "missing".equals(rawSendMode) ? "missing" : "section".equals(rawSendMode) ? "section" : "all";
 	String missingRanges = request.getParameter("missingRanges");
 	String sectionNumber = request.getParameter("sectionNumber");
-	String densityMode = normalizeDensityMode(request.getParameter("densityMode"));
-	int maxQrTextChars = maxQrTextCharsForMode(densityMode);
-	int frameDelayMs = normalizeFrameDelayMs(request.getParameter("frameDelayMs"));
 	String errorMessage = "";
 	String fileName = "";
 	long fileSizeBytes = 0;
@@ -301,7 +273,7 @@
 
 			byte[] fileBytes = Files.readAllBytes(targetFile.toPath());
 
-			usedChunkBytes = calculateFileChunkBytes(fileName, fileBytes.length, maxQrTextChars);
+			usedChunkBytes = calculateFileChunkBytes(fileName, fileBytes.length);
 			totalChunks = (fileBytes.length + usedChunkBytes - 1) / usedChunkBytes;
 			sectionCount = (totalChunks + SECTION_SIZE - 1) / SECTION_SIZE;
 			List<Integer> requestedIndexes;
@@ -322,7 +294,7 @@
 				byte[] chunk = sliceBytes(fileBytes, start, end);
 
 				String qrText = buildFileV2Payload(fileName, chunkIndex, totalChunks, chunk);
-				if (qrText.length() > maxQrTextChars) {
+				if (qrText.length() > QR_TEXT_CHARS) {
 					throw new Exception("QR payload가 너무 큽니다: " + qrText.length() + " chars");
 				}
 				qrBase64Images.add(generateQRCodeBase64(qrText, QR_IMAGE_SIZE));
@@ -345,7 +317,6 @@
 		body { font-family: sans-serif; padding: 20px; background-color: #f4f4f4; margin: 0; text-align: center;}
 		.container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); border-radius: 8px;}
 		input[type="text"], select { width: 100%; padding: 10px; box-sizing: border-box; margin-bottom: 10px; font-family: monospace; }
-		.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 		.hint { color: #555; font-size: 13px; margin: -4px 0 10px; text-align: left; }
 		button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #0056b3; color: white; border: none; border-radius: 4px;}
 		.error-msg { color: red; font-weight: bold; margin-top: 10px; }
@@ -355,7 +326,6 @@
 		.controls button { background-color: #333; margin: 0 5px; }
 		.status { font-size: 20px; font-weight: bold; margin-top: 10px; }
 		.file-info { background: #e9ecef; padding: 10px; margin-top: 20px; text-align: left; }
-		@media (max-width: 700px) { .form-row { grid-template-columns: 1fr; } }
 	</style>
 </head>
 <body>
@@ -364,37 +334,18 @@
 		<form method="post" action="">
 			<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">서버 내 파일 절대 경로 입력</label>
 			<input type="text" name="filePath" value="<%= escapeHtml(filePath) %>" placeholder="C:\temp\sample.pptx">
-			<div class="form-row">
-				<div>
-					<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">전송 모드</label>
-					<select name="sendMode">
-						<option value="all" <%= "all".equals(sendMode) ? "selected" : "" %>>전체 전송</option>
-						<option value="section" <%= "section".equals(sendMode) ? "selected" : "" %>>100개 구간 전송</option>
-						<option value="missing" <%= "missing".equals(sendMode) ? "selected" : "" %>>누락 조각만 재전송</option>
-					</select>
-				</div>
-				<div>
-					<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">QR 밀도</label>
-					<select name="densityMode">
-						<option value="max" <%= "max".equals(densityMode) ? "selected" : "" %>>최대 - 프레임 최소</option>
-						<option value="balanced" <%= "balanced".equals(densityMode) ? "selected" : "" %>>균형 - 인식 안정</option>
-						<option value="stable" <%= "stable".equals(densityMode) ? "selected" : "" %>>안정 - 더 낮은 밀도</option>
-					</select>
-				</div>
-			</div>
+			<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">전송 모드</label>
+			<select name="sendMode">
+				<option value="all" <%= "all".equals(sendMode) ? "selected" : "" %>>전체 전송</option>
+				<option value="section" <%= "section".equals(sendMode) ? "selected" : "" %>>100개 구간 전송</option>
+				<option value="missing" <%= "missing".equals(sendMode) ? "selected" : "" %>>누락 조각만 재전송</option>
+			</select>
 			<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">구간 번호</label>
 			<input type="text" name="sectionNumber" value="<%= escapeHtml(sectionNumber) %>" placeholder="1">
 			<div class="hint">100개 구간 전송 모드에서 사용합니다. 1구간은 1-100, 2구간은 101-200입니다.</div>
 			<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">누락 조각 범위</label>
 			<input type="text" name="missingRanges" value="<%= escapeHtml(missingRanges) %>" placeholder="444, 501-508">
 			<div class="hint">폰 화면에 표시된 값을 보고 직접 입력한 뒤 전송 모드를 누락 조각만 재전송으로 선택하세요.</div>
-			<label style="display:block; text-align:left; font-weight:bold; margin-bottom:5px;">재생 간격</label>
-			<select name="frameDelayMs">
-				<option value="250" <%= frameDelayMs == 250 ? "selected" : "" %>>250ms - 권장</option>
-				<option value="400" <%= frameDelayMs == 400 ? "selected" : "" %>>400ms - 안정</option>
-				<option value="150" <%= frameDelayMs == 150 ? "selected" : "" %>>150ms - 빠름</option>
-				<option value="0" <%= frameDelayMs == 0 ? "selected" : "" %>>수동 넘김</option>
-			</select>
 			<button type="submit">QR 스트림 생성</button>
 		</form>
 
@@ -412,11 +363,9 @@
 				<strong>100개 구간:</strong> <%= sectionCount %>개<br>
 				<strong>이번 생성 범위:</strong> <%= generatedStartIndex %>-<%= generatedEndIndex %><br>
 				<strong>전송 모드:</strong> <%= "missing".equals(sendMode) ? "누락 조각만 재전송" : "section".equals(sendMode) ? "100개 구간 전송" : "전체 전송" %><br>
-				<strong>밀도:</strong> <%= escapeHtml(densityMode) %><br>
-				<strong>재생 간격:</strong> <%= frameDelayLabel(frameDelayMs) %><br>
 				<strong>QR 이미지:</strong> <%= QR_IMAGE_SIZE %>px /
 				<strong>chunk:</strong> <%= usedChunkBytes %> bytes /
-				<strong>QR 최대 payload:</strong> <%= maxQrTextChars %> chars
+				<strong>QR 최대 payload:</strong> <%= QR_TEXT_CHARS %> chars
 			</div>
 
 			<div class="player-area">
@@ -447,7 +396,6 @@
 				var currentIndex = 0;
 				var playInterval = null;
 				var totalFileFrames = <%= totalChunks %>;
-				var frameDelayMs = <%= frameDelayMs %>;
 				var imgElement = document.getElementById("qrImage");
 				var statusElement = document.getElementById("frameStatus");
 
@@ -458,9 +406,8 @@
 
 				function updateStatus() {
 					var fileFrame = qrFrameLabels[currentIndex] || String(currentIndex + 1);
-					var modeText = frameDelayMs === 0 ? "수동" : frameDelayMs + "ms";
 					statusElement.innerText = "FILE " + fileFrame + " / " + totalFileFrames
-							+ " (" + (currentIndex + 1) + " / " + qrFrames.length + " 재생, " + modeText + ")";
+							+ " (" + (currentIndex + 1) + " / " + qrFrames.length + " 재생)";
 				}
 
 				function nextFrame() {
@@ -483,12 +430,7 @@
 
 				function startPlay() {
 					if (playInterval) clearInterval(playInterval);
-					if (frameDelayMs === 0) {
-						playInterval = null;
-						updateStatus();
-						return;
-					}
-					playInterval = setInterval(nextFrame, frameDelayMs);
+					playInterval = setInterval(nextFrame, <%= FRAME_DELAY_MS %>);
 				}
 
 				function stopPlay() {
