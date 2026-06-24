@@ -1,0 +1,3 @@
+jsp-dev-server.*.log
+jsp-test-files/
+tools/jsp-dev-server/target/
